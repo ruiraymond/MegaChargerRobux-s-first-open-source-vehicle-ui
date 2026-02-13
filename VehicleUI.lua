@@ -201,7 +201,7 @@ local featureTitle = makeLabel(rightPanel, "Interactive Features", UDim2.fromOff
 featureTitle.Font = Enum.Font.GothamSemibold
 featureTitle.TextSize = 22
 
-local statusLabel = makeLabel(rightPanel, "Autopilot: OFF\nJoe Mode: OFF", UDim2.new(1, -36, 0, 50), UDim2.fromOffset(18, 52), theme.subText)
+local statusLabel = makeLabel(rightPanel, "Autopilot: OFF\nFSD Beta: OFF\nJoe Mode: OFF", UDim2.new(1, -36, 0, 72), UDim2.fromOffset(18, 52), theme.subText)
 statusLabel.TextSize = 15
 statusLabel.TextWrapped = true
 
@@ -217,7 +217,18 @@ buttonLayout.Padding = UDim.new(0, 12)
 buttonLayout.Parent = buttonHolder
 
 local autopilotButton = makeButton(buttonHolder, "Autopilot")
+local fsdButton = makeButton(buttonHolder, "FSD Beta")
 local joeModeButton = makeButton(buttonHolder, "Joe Mode")
+
+local fsdHint = makeLabel(
+    rightPanel,
+    "FSD Beta simulates lane-centering + adaptive speed for Roblox demos.",
+    UDim2.new(1, -36, 0, 34),
+    UDim2.fromOffset(18, 162),
+    theme.subText
+)
+fsdHint.TextWrapped = true
+fsdHint.TextSize = 13
 
 local carControlsTitle = makeLabel(rightPanel, "Vehicle Rendering Controls", UDim2.fromOffset(280, 26), UDim2.fromOffset(18, 190), theme.text)
 carControlsTitle.Font = Enum.Font.GothamSemibold
@@ -329,6 +340,7 @@ local states = {
     rearRight = false,
     trunk = false,
     autopilot = false,
+    fsd = false,
     joeMode = false,
 }
 
@@ -348,8 +360,9 @@ end
 
 local function updateFeatureStatus()
     statusLabel.Text = string.format(
-        "Autopilot: %s\nJoe Mode: %s",
+        "Autopilot: %s\nFSD Beta: %s\nJoe Mode: %s",
         states.autopilot and "ON" or "OFF",
+        states.fsd and "ON" or "OFF",
         states.joeMode and "ON" or "OFF"
     )
 end
@@ -408,7 +421,21 @@ end)
 
 autopilotButton.MouseButton1Click:Connect(function()
     states.autopilot = not states.autopilot
+    if not states.autopilot then
+        states.fsd = false
+        setButtonState(fsdButton, states.fsd)
+    end
     setButtonState(autopilotButton, states.autopilot)
+    updateFeatureStatus()
+end)
+fsdButton.MouseButton1Click:Connect(function()
+    if not states.autopilot then
+        states.autopilot = true
+        setButtonState(autopilotButton, states.autopilot)
+    end
+
+    states.fsd = not states.fsd
+    setButtonState(fsdButton, states.fsd)
     updateFeatureStatus()
 end)
 joeModeButton.MouseButton1Click:Connect(function()
@@ -417,15 +444,53 @@ joeModeButton.MouseButton1Click:Connect(function()
     updateFeatureStatus()
 end)
 
--- Demo drive + battery simulation
+-- Demo drive + battery simulation (safe in-game approximation, not real vehicle control)
 local speed = 0
+local lateralOffset = 0
+local lanePhase = 0
+local obstaclePhase = 0
+
+local function computeFsdTargetSpeed(dt)
+    lanePhase += dt * 0.75
+    obstaclePhase += dt * 0.25
+
+    -- Lane quality oscillates to mimic curves and camera confidence.
+    local laneQuality = 0.75 + (math.sin(lanePhase) * 0.2)
+
+    -- Virtual obstacle distance oscillates to emulate traffic behavior.
+    local obstacleDistance = 80 + (math.sin(obstaclePhase) * 55)
+    local trafficFactor = math.clamp((obstacleDistance - 22) / 95, 0.25, 1)
+
+    local cruiseMph = 74
+    local targetMph = cruiseMph * laneQuality * trafficFactor
+
+    -- Keep lane center indicator near zero with minor correction error.
+    local correction = math.sin(lanePhase * 1.4) * 0.03
+    lateralOffset = math.clamp((lateralOffset * 0.88) + correction, -0.35, 0.35)
+
+    return math.clamp(targetMph, 18, 74)
+end
+
 RunService.RenderStepped:Connect(function(dt)
-    if states.autopilot then
+    if states.autopilot and states.fsd then
+        local target = computeFsdTargetSpeed(dt)
+        local accel = (target > speed) and 16 or 20
+        speed = math.clamp(speed + math.sign(target - speed) * dt * accel, 0, 82)
+        batteryPct = math.clamp(batteryPct - dt * 0.08, 0, 100)
+
+        statusLabel.Text = string.format(
+            "Autopilot: ON\nFSD Beta: ON (lane offset %.2fm)\nJoe Mode: %s",
+            lateralOffset,
+            states.joeMode and "ON" or "OFF"
+        )
+    elseif states.autopilot then
         speed = math.clamp(speed + (dt * 18), 0, 82)
         batteryPct = math.clamp(batteryPct - dt * 0.06, 0, 100)
+        updateFeatureStatus()
     else
         speed = math.clamp(speed - (dt * 14), 0, 82)
         batteryPct = math.clamp(batteryPct - dt * 0.015, 0, 100)
+        updateFeatureStatus()
     end
 
     speedValue.Text = string.format("%d mph", math.floor(speed + 0.5))
