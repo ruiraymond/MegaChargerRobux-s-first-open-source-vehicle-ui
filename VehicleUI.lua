@@ -1,6 +1,6 @@
 --[[
-    Tesla-inspired Vehicle UI (Model 3/Y style)
-    Luau script compatible with executors that support Roblox APIs.
+    EV-inspired Vehicle UI (Model 3/Y V12 style)
+    Luau script for Roblox executors (Codex Executor compatible).
 ]]
 
 local Players = game:GetService("Players")
@@ -10,7 +10,7 @@ local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-local existing = playerGui:FindFirstChild("TeslaInspiredVehicleUI")
+local existing = playerGui:FindFirstChild("Model3InspiredVehicleUI")
 if existing then
     existing:Destroy()
 end
@@ -21,6 +21,7 @@ local theme = {
     panelSoft = Color3.fromRGB(33, 38, 46),
     accent = Color3.fromRGB(64, 145, 255),
     success = Color3.fromRGB(68, 199, 109),
+    warning = Color3.fromRGB(245, 193, 69),
     text = Color3.fromRGB(234, 237, 242),
     subText = Color3.fromRGB(150, 158, 171),
 }
@@ -63,7 +64,7 @@ local function makeButton(parent, text)
 end
 
 local ui = Instance.new("ScreenGui")
-ui.Name = "TeslaInspiredVehicleUI"
+ui.Name = "Model3InspiredVehicleUI"
 ui.ResetOnSpawn = false
 ui.IgnoreGuiInset = true
 ui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -144,6 +145,7 @@ for _, gear in ipairs({"P", "R", "N", "D"}) do
     end)
 end
 
+local batteryPct = 82
 local batteryLabel = makeLabel(topBar, "Battery 82%", UDim2.fromOffset(180, 20), UDim2.new(1, -208, 0, 14), theme.subText)
 batteryLabel.TextXAlignment = Enum.TextXAlignment.Right
 batteryLabel.TextSize = 13
@@ -272,7 +274,7 @@ for _, item in ipairs({
     addCorner(navButton, 12)
 end
 
--- 3D car model for the viewport
+-- 3D car model for viewport
 local worldModel = Instance.new("WorldModel")
 worldModel.Parent = viewport
 
@@ -293,9 +295,9 @@ local function makePart(name, size, cframe, color)
     return p
 end
 
-local bodyBase = makePart("Body", Vector3.new(7.6, 1.2, 14), CFrame.new(0, 0, 0), Color3.fromRGB(40, 45, 54))
-local roof = makePart("Roof", Vector3.new(6.4, 1, 8), CFrame.new(0, 1, -0.4), Color3.fromRGB(30, 34, 42))
-local hood = makePart("Hood", Vector3.new(6.8, 0.7, 3.2), CFrame.new(0, 0.8, -5.2), Color3.fromRGB(35, 40, 48))
+makePart("Body", Vector3.new(7.6, 1.2, 14), CFrame.new(0, 0, 0), Color3.fromRGB(40, 45, 54))
+makePart("Roof", Vector3.new(6.4, 1, 8), CFrame.new(0, 1, -0.4), Color3.fromRGB(30, 34, 42))
+makePart("Hood", Vector3.new(6.8, 0.7, 3.2), CFrame.new(0, 0.8, -5.2), Color3.fromRGB(35, 40, 48))
 local trunk = makePart("Trunk", Vector3.new(6.8, 0.7, 3.2), CFrame.new(0, 0.8, 5.2), Color3.fromRGB(35, 40, 48))
 
 local frontLeftDoor = makePart("FrontLeftDoor", Vector3.new(0.5, 1.1, 3.2), CFrame.new(-4.05, 0.55, -2.6), Color3.fromRGB(55, 60, 70))
@@ -352,6 +354,20 @@ local function updateFeatureStatus()
     )
 end
 
+local function updateBatteryDisplay()
+    local ratio = math.clamp(batteryPct / 100, 0, 1)
+    batteryLabel.Text = string.format("Battery %d%%", math.floor(batteryPct + 0.5))
+    batteryFill.Size = UDim2.new(ratio, 0, 1, 0)
+
+    if batteryPct > 40 then
+        batteryFill.BackgroundColor3 = theme.success
+    elseif batteryPct > 20 then
+        batteryFill.BackgroundColor3 = theme.warning
+    else
+        batteryFill.BackgroundColor3 = Color3.fromRGB(226, 84, 84)
+    end
+end
+
 local function tweenDoor(part, targetCFrame)
     TweenService:Create(part, TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
         CFrame = targetCFrame,
@@ -401,15 +417,19 @@ joeModeButton.MouseButton1Click:Connect(function()
     updateFeatureStatus()
 end)
 
--- Demo speed animation
+-- Demo drive + battery simulation
 local speed = 0
 RunService.RenderStepped:Connect(function(dt)
     if states.autopilot then
-        speed = math.clamp(speed + (dt * 18), 0, 75)
+        speed = math.clamp(speed + (dt * 18), 0, 82)
+        batteryPct = math.clamp(batteryPct - dt * 0.06, 0, 100)
     else
-        speed = math.clamp(speed - (dt * 14), 0, 75)
+        speed = math.clamp(speed - (dt * 14), 0, 82)
+        batteryPct = math.clamp(batteryPct - dt * 0.015, 0, 100)
     end
+
     speedValue.Text = string.format("%d mph", math.floor(speed + 0.5))
+    updateBatteryDisplay()
 
     for gear, button in pairs(gearButtons) do
         button.BackgroundColor3 = (gear == currentGear) and theme.accent or theme.panel
@@ -417,3 +437,4 @@ RunService.RenderStepped:Connect(function(dt)
 end)
 
 updateFeatureStatus()
+updateBatteryDisplay()
